@@ -1,24 +1,7 @@
-#include <../include/sm4.h>
+#include "../include/sm4.h"
 
-// 系统参数FK
-static const uint32_t SM4_FK[4] = {
-    0xa3b1bac6, 0x56aa3350, 0x677d9197, 0xb27022dc
-};
-
-// 固定参数CK
-static const uint32_t SM4_CK[32] = {
-    0x00070e15,0x1c232a31,0x383f464d,0x545b6269,
-	0x70777e85,0x8c939aa1,0xa8afb6bd,0xc4cbd2d9,
-	0xe0e7eef5,0xfc030a11,0x181f262d,0x343b4249,
-	0x50575e65,0x6c737a81,0x888f969d,0xa4abb2b9,
-	0xc0c7ced5,0xdce3eaf1,0xf8ff060d,0x141b2229,
-	0x30373e45,0x4c535a61,0x686f767d,0x848b9299,
-	0xa0a7aeb5,0xbcc3cad1,0xd8dfe6ed,0xf4fb0209,
-	0x10171e25,0x2c333a41,0x484f565d,0x646b7279
-};
-
-// SBox参数列表
-static const uint8_t SM4_SBox[256] = {
+// sbox 
+static const uint8_t sbox[256] = {
     0xd6,0x90,0xe9,0xfe,0xcc,0xe1,0x3d,0xb7,0x16,0xb6,0x14,0xc2,0x28,0xfb,0x2c,0x05,
 	0x2b,0x67,0x9a,0x76,0x2a,0xbe,0x04,0xc3,0xaa,0x44,0x13,0x26,0x49,0x86,0x06,0x99,
 	0x9c,0x42,0x50,0xf4,0x91,0xef,0x98,0x7a,0x33,0x54,0x0b,0x43,0xed,0xcf,0xac,0x62,
@@ -37,117 +20,117 @@ static const uint8_t SM4_SBox[256] = {
 	0x18,0xf0,0x7d,0xec,0x3a,0xdc,0x4d,0x20,0x79,0xee,0x5f,0x3e,0xd7,0xcb,0x39,0x48
 };
 
+// 系统参数
+static const uint32_t FK[4] = {
+    0xa3b1bac6, 0x56aa3350, 0x677d9197, 0xb27022dc
+};
+
+// 固定参数
+static const uint32_t CK[32] = {
+    0x00070e15,0x1c232a31,0x383f464d,0x545b6269,
+	0x70777e85,0x8c939aa1,0xa8afb6bd,0xc4cbd2d9,
+	0xe0e7eef5,0xfc030a11,0x181f262d,0x343b4249,
+	0x50575e65,0x6c737a81,0x888f969d,0xa4abb2b9,
+	0xc0c7ced5,0xdce3eaf1,0xf8ff060d,0x141b2229,
+	0x30373e45,0x4c535a61,0x686f767d,0x848b9299,
+	0xa0a7aeb5,0xbcc3cad1,0xd8dfe6ed,0xf4fb0209,
+	0x10171e25,0x2c333a41,0x484f565d,0x646b7279
+
+};
+
+
+
+// 非线性变换tao，不知道a0 a1 a2 a3的顺序是否正确
+uint32_t sm4_tao(uint32_t x){
+    uint8_t a0, a1, a2, a3;
+    uint32_t result;
+
+    // 大端字节序：最高有效字节在低地址上
+    a0 = sbox[(x >> 24) & 0xFF]; // 提取最高有效字节
+    a1 = sbox[(x >> 16) & 0xFF]; // 提取次高有效字节
+    a2 = sbox[(x >> 8) & 0xFF];  // 提取次低有效字节
+    a3 = sbox[x & 0xFF];         // 提取最低有效字节
+
+    // 将替换后的字节重新组合成一个 32 位整数
+    return (uint32_t)a0 << 24 | (uint32_t)a1 << 16 | (uint32_t)a2 << 8 | (uint32_t)a3;
+    // uint8_t a3 = x & 0xff;
+    // uint8_t a2 = (x >> 8) & 0xff;
+    // uint8_t a1 = (x >> 16) & 0xff;
+    // uint8_t a0 = (x >> 24) & 0xff;
+    // return sbox[a0] | (sbox[a1] << 8) | (sbox[a2] << 16) | (sbox[a3] << 24);
+}
+
 // 线性变换L
-static uint32_t SM4_L(uint32_t x) {
+uint32_t sm4_L(uint32_t x){
     return x ^ SM4_ROTL(x, 2) ^ SM4_ROTL(x, 10) ^ SM4_ROTL(x, 18) ^ SM4_ROTL(x, 24);
 }
 
-// 线性变换L'，用于秘钥拓展
-static uint32_t SM4_L1(uint32_t x) {
-	return x ^ SM4_ROTL(x, 13) ^ SM4_ROTL(x, 23);
-}
-
-// 非线性变换tau
-static uint32_t SM4_tau(uint32_t x){
-    uint32_t a0 = SM4_SBox[(x >> 24) & 0xFF];
-    uint32_t a1 = SM4_SBox[(x >> 16) & 0xFF];
-    uint32_t a2 = SM4_SBox[(x >> 8) & 0xFF];
-    uint32_t a3 = SM4_SBox[x & 0xFF];
-    return (a0 << 24) | (a1 << 16) | (a2 << 8) | a3;
-}
-
 // 合成置换T
-static uint32_t SM4_T(uint32_t x) {
-    return SM4_L(SM4_tau(x));
+uint32_t sm4_T(uint32_t x){
+    return sm4_L(sm4_tao(x));
 }
 
 // 轮函数
-static uint32_t SM4_F(uint32_t x0, uint32_t x1, uint32_t x2, uint32_t x3, uint32_t rk) {
-    return x0 ^ SM4_T(x1 ^ x2 ^ x3 ^ rk);
+uint32_t sm4_F(uint32_t x0, uint32_t x1, uint32_t x2, uint32_t x3, uint32_t rk){
+    return x0 ^ sm4_T(x1 ^ x2 ^ x3 ^ rk);
 }
+
+// 线性变换L'
+uint32_t sm4_L1(uint32_t x){
+    return x ^ SM4_ROTL(x, 13) ^ SM4_ROTL(x, 23);
+}
+
+// 合成置换T'
+uint32_t sm4_T1(uint32_t x){
+    return sm4_L1(sm4_tao(x));
+}
+
 
 // 秘钥拓展函数
-void sm4_key_expansion(uint8_t key[16], uint32_t round_keys[32]){
-	uint32_t K[4] = {0};
-	printf("\n");
-	// for (int i = 0; i < 16; ++i)
-	// {
-	// 	printf(key[i]);
-	// }
-	
-	for (int i = 0; i < 4; i++) {
-		K[i] = ((uint32_t)key[4 * i] << 24) | ((uint32_t)key[4 * i + 1] << 16) | ((uint32_t)key[4 * i + 2] << 8) | (uint32_t)key[4 * i + 3];
-		printf("0x%08X", K[i]);
-	}
-	printf("\n");
-	uint32_t A = K[0] ^ SM4_FK[0];
-	uint32_t B = K[1] ^ SM4_FK[1];
-	uint32_t C = K[2] ^ SM4_FK[2];
-	uint32_t D = K[3] ^ SM4_FK[3];
-	uint32_t F = 0;
-	for (int i = 0; i < 32; i++) {
-		F = A ^ SM4_L1(B ^ C ^ D ^ SM4_CK[i]);
-		A = B;
-		B = C;
-		C = D;
-		D = F;
-		round_keys[i] = F;
-	}
+// void sm4_key_expand(uint8_t key[16], uint32_t rk[32]){
+void sm4_key_expand(uint8_t *key, uint32_t *rk){
+    uint32_t K[36] = {0};
+    uint32_t MK[4] = {0};
+    for(int i = 0; i < 4; ++i){
+        MK[i] = ((uint32_t)key[4*i] << 24) | ((uint32_t)key[4*i+1] << 16) | ((uint32_t)key[4*i+2] << 8) | ((uint32_t)key[4*i+3]);
+        K[i] = MK[i] ^ FK[i];
+    }
+    for(int i = 0; i < 32; ++i){
+        K[i+4] = K[i] ^ sm4_T1(K[i+1] ^ K[i+2] ^ K[i+3] ^ CK[i]);
+        rk[i] = K[i+4];
+    }
 }
 
-int sm4_ecb_encrypt(const  uint8_t *in, uint8_t *out, uint8_t *key) {
-    //32轮迭代
-    uint32_t round_keys[32];
-    sm4_key_expansion(key, round_keys);
-    uint32_t X[4];
-    for (int i = 0; i < 4; i++) {
-        X[i] = ((uint32_t)in[4 * i] << 24) | ((uint32_t)in[4 * i + 1] << 16) | ((uint32_t)in[4 * i + 2] << 8) | (uint32_t)in[4 * i + 3];
+// 输入128位明文，输出128位密文 ，数据结构错误
+// void sm4_ecb_encrypt(const uint8_t in[16], uint8_t out[16], uint32_t rk[32]){
+void sm4_ecb_encrypt(const uint8_t *in, uint8_t *out, uint32_t *rk){
+    uint32_t X[36] = {0};
+    for(int i = 0; i < 4; ++i){
+        X[i] = ((uint32_t)in[4*i] << 24) | ((uint32_t)in[4*i+1] << 16) | ((uint32_t)in[4*i+2] << 8) | ((uint32_t)in[4*i+3]);
     }
-    uint32_t Y[4];
-    for (int i = 0; i < 32; i++) {
-        // printf("Round %d, Key: 0x%08X\n", i, round_keys[i]); // 打印轮密钥
-        Y[0] = SM4_F(X[0], X[1], X[2], X[3], round_keys[i]);
-        Y[1] = X[0];
-        Y[2] = X[1];
-        Y[3] = X[2];
-        for (int j = 0; j < 4; j++) {
-            X[j] = Y[j];
-        }
-        // 打印每轮的输出
-        // printf("Round %d, Output: 0x%08X 0x%08X 0x%08X 0x%08X\n", i, Y[0], Y[1], Y[2], Y[3]);
+    for(int i = 0; i < 32; ++i){
+        X[i+4] = sm4_F(X[i], X[i+1], X[i+2], X[i+3], rk[i]);
     }
-    for (int i = 0; i < 4; i++) {
-        out[4 * i] = (Y[i] >> 24) & 0xFF;
-        out[4 * i + 1] = (Y[i] >> 16) & 0xFF;
-        out[4 * i + 2] = (Y[i] >> 8) & 0xFF;
-        out[4 * i + 3] = Y[i] & 0xFF;
+    for(int i = 0; i < 4; ++i){
+        out[4*i] = (X[35-i] >> 24) & 0xff;
+        out[4*i+1] = (X[35-i] >> 16) & 0xff;
+        out[4*i+2] = (X[35-i] >> 8) & 0xff;
+        out[4*i+3] = X[35-i] & 0xff;
     }
-    return 0;
 }
 
-int sm4_ecb_decrypt(const uint8_t *in, uint8_t *out, uint8_t *key){
-	//32轮迭代
-	uint32_t round_keys[32];
-	sm4_key_expansion(key, round_keys);
-	uint32_t X[4];
-	for (int i = 0; i < 4; i++) {
-		X[i] = ((uint32_t)in[4 * i] << 24) | ((uint32_t)in[4 * i + 1] << 16) | ((uint32_t)in[4 * i + 2] << 8) | (uint32_t)in[4 * i + 3];
-	}
-	uint32_t Y[4];
-	for (int i = 0; i < 32; i++) {
-		Y[0] = SM4_F(X[0], X[1], X[2], X[3], round_keys[31 - i]);
-		Y[1] = X[0];
-		Y[2] = X[1];
-		Y[3] = X[2];
-		for (int j = 0; j < 4; j++) {
-			X[j] = Y[j];
-		}
-	}
-	for (int i = 0; i < 4; i++) {
-		out[4 * i] = (Y[i] >> 24) & 0xFF;
-		out[4 * i + 1] = (Y[i] >> 16) & 0xFF;
-		out[4 * i + 2] = (Y[i] >> 8) & 0xFF;
-		out[4 * i + 3] = Y[i] & 0xFF;
-	}
-	return 0;	
+void sm4_ecb_decrypt(const uint8_t *in, uint8_t *out, uint32_t *rk){
+    uint32_t X[36] = {0};
+    for(int i = 0; i < 4; ++i){
+        X[i] = ((uint32_t)in[4*i] << 24) | ((uint32_t)in[4*i+1] << 16) | ((uint32_t)in[4*i+2] << 8) | ((uint32_t)in[4*i+3]);
+    }
+    for(int i = 0; i < 32; ++i){
+        X[i+4] = sm4_F(X[i], X[i+1], X[i+2], X[i+3], rk[31-i]);
+    }
+    for(int i = 0; i < 4; ++i){
+        out[4*i] = (X[35-i] >> 24) & 0xff;
+        out[4*i+1] = (X[35-i] >> 16) & 0xff;
+        out[4*i+2] = (X[35-i] >> 8) & 0xff;
+        out[4*i+3] = X[35-i] & 0xff;
+    }
 }

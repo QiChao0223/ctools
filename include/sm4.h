@@ -13,13 +13,30 @@
 #define SM4_KEY_SIZE 16 // 密钥长度
 #define SM4_IV_SIZE 16 // 初始向量长度
 #define SM4_KEY_SCHEDULE_SIZE 32 // 轮密钥长度
-
-// 循环左移
+// 32位循环左移
 #define SM4_ROTL(x, n) (((x) << (n)) | ((x) >> (32 - (n))))
 
-int sm4_ecb_encrypt(const uint8_t *in, uint8_t *out, uint8_t *key);
+#define GET_ULONG_BE(n,b,i)                             \
+{                                                       \
+    (n) = ( (uint32_t) (b)[(i)    ] << 24 )        \
+        | ( (uint32_t) (b)[(i) + 1] << 16 )        \
+        | ( (uint32_t) (b)[(i) + 2] <<  8 )        \
+        | ( (uint32_t) (b)[(i) + 3]       );       \
+}
 
-int sm4_ecb_decrypt(const uint8_t *in, uint8_t *out, uint8_t *key);
+#define PUT_ULONG_BE(n,b,i)                             \
+{                                                       \
+    (b)[(i)    ] = (uint8_t) ( (n) >> 24 );       \
+    (b)[(i) + 1] = (uint8_t) ( (n) >> 16 );       \
+    (b)[(i) + 2] = (uint8_t) ( (n) >>  8 );       \
+    (b)[(i) + 3] = (uint8_t) ( (n)       );       \
+}
+
+void sm4_key_expand(uint8_t *key, uint32_t *rk);
+
+void sm4_ecb_encrypt(const uint8_t *in, uint8_t *out, uint32_t *rk);
+
+void sm4_ecb_decrypt(const uint8_t *in, uint8_t *out, uint32_t *rk);
 
 
 #endif
